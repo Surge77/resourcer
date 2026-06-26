@@ -1,0 +1,11 @@
+{
+  "include": ["src", "tests", "main.py"],
+  "exclude": ["**/__pycache__", ".venv"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "standard",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false
+}
