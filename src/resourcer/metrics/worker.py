@@ -57,6 +57,13 @@ class MetricsWorker(QObject):
         if self._process_timer is not None:
             self._process_timer.stop()
 
+    def set_metrics_interval(self, interval_ms: int) -> None:
+        # No @Slot here: a queued signal delivers to a plain method by the
+        # receiver's thread affinity, and PySide6's Slot stub mistypes the
+        # single-int overload.
+        if self._metrics_timer is not None:
+            self._metrics_timer.setInterval(interval_ms)
+
     @Slot()
     def _emit_metrics(self) -> None:
         self.sample_ready.emit(self._sampler.sample_metrics())
@@ -66,14 +73,20 @@ class MetricsWorker(QObject):
         self.processes_ready.emit(self._sampler.sample_processes())
 
 
-class MetricsService:
+class MetricsService(QObject):
     """Owns the QThread + worker lifecycle. Connect to ``worker`` signals."""
 
+    _interval_changed = Signal(int)
+
     def __init__(self, sampler: Sampler | None = None) -> None:
+        super().__init__()
         self._thread = QThread()
         self._worker = MetricsWorker(sampler)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.start)
+        # Cross-thread, auto-queued: emitting on the UI thread delivers safely
+        # to the worker thread's event loop.
+        self._interval_changed.connect(self._worker.set_metrics_interval)
 
     @property
     def worker(self) -> MetricsWorker:
@@ -81,6 +94,9 @@ class MetricsService:
 
     def start(self) -> None:
         self._thread.start()
+
+    def set_metrics_interval(self, interval_ms: int) -> None:
+        self._interval_changed.emit(interval_ms)
 
     def shutdown(self) -> None:
         """Stop timers in the worker thread, then quit + wait — no crash on exit."""

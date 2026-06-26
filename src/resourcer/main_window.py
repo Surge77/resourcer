@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QMainWindow,
+    QMessageBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -18,8 +20,9 @@ from .metrics.worker import MetricsService
 from .ui.charts import CpuChart, TimeSeriesChart
 from .ui.process_table import ProcessTableWidget
 from .ui.widgets import StatCard
-from .util.constants import APP_NAME, APP_VERSION
+from .util.constants import APP_NAME, APP_VERSION, POLL_INTERVAL_CHOICES
 from .util.format import human_bytes, human_rate
+from .util.style import DARK_STYLESHEET
 
 MEM_COLOR = "#569cd6"
 DISK_READ_COLOR = "#4ec9b0"
@@ -33,7 +36,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.resize(1100, 760)
-        self.setStyleSheet("QMainWindow{background:#1e1e1e;}")
+        self.setStyleSheet(DARK_STYLESHEET)
+        self._build_menu()
+
+        self._interval_combo = QComboBox()
+        for label, interval_ms in POLL_INTERVAL_CHOICES:
+            self._interval_combo.addItem(label, interval_ms)
+        self._interval_combo.currentIndexChanged.connect(self._on_interval_changed)
 
         self._cpu_chart = CpuChart()
         self._mem_chart = TimeSeriesChart(
@@ -66,9 +75,31 @@ class MainWindow(QMainWindow):
         self._service.worker.processes_ready.connect(self._on_processes)
         self._service.start()
 
+    def _build_menu(self) -> None:
+        help_menu = self.menuBar().addMenu("Help")
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            f"About {APP_NAME}",
+            f"<b>{APP_NAME}</b> {APP_VERSION}<br><br>"
+            "Live Windows system resource dashboard — CPU, memory, disk and "
+            "network charts with a sortable process manager.<br><br>"
+            "Built with PySide6, psutil and pyqtgraph.",
+        )
+
+    def _on_interval_changed(self, index: int) -> None:
+        interval_ms = self._interval_combo.itemData(index)
+        if interval_ms is not None:
+            self._service.set_metrics_interval(int(interval_ms))
+
     def _build_central(self) -> QWidget:
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
+        toolbar.addWidget(self._interval_combo)
         for card in (self._card_cpu, self._card_ram, self._card_down, self._card_up):
             toolbar.addWidget(card)
         toolbar.addStretch(1)

@@ -22,14 +22,18 @@ from PySide6.QtCore import (
 _Index = Union[QModelIndex, QPersistentModelIndex]
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
+from ..metrics.killer import KillOutcome, terminate_process
 from ..metrics.models import ProcessInfo
 from ..util.format import human_bytes
 
@@ -52,8 +56,12 @@ class ProcessTableModel(QAbstractTableModel):
         self.endResetModel()
 
     def pid_at(self, row: int) -> int | None:
+        proc = self.proc_at(row)
+        return proc.pid if proc is not None else None
+
+    def proc_at(self, row: int) -> ProcessInfo | None:
         if 0 <= row < len(self._rows):
-            return self._rows[row].pid
+            return self._rows[row]
         return None
 
     def rowCount(self, parent: _Index = QModelIndex()) -> int:  # noqa: B008
@@ -117,6 +125,10 @@ class ProcessTableWidget(QWidget):
         self._search.setPlaceholderText("Filter by name…")
         self._search.textChanged.connect(self._proxy.setFilterFixedString)
 
+        self._kill_button = QPushButton("Kill selected")
+        self._kill_button.setEnabled(False)
+        self._kill_button.clicked.connect(self._on_kill_clicked)
+
         self._view = QTableView()
         self._view.setModel(self._proxy)
         self._view.setSortingEnabled(True)
@@ -127,11 +139,16 @@ class ProcessTableWidget(QWidget):
         self._view.setAlternatingRowColors(True)
         header = self._view.horizontalHeader()
         header.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Stretch)
+        self._view.selectionModel().selectionChanged.connect(self._sync_kill_enabled)
+
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Processes"))
+        top.addWidget(self._search, 1)
+        top.addWidget(self._kill_button)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Processes"))
-        layout.addWidget(self._search)
+        layout.addLayout(top)
         layout.addWidget(self._view)
 
     def update_processes(self, rows: list[ProcessInfo]) -> None:
@@ -139,13 +156,46 @@ class ProcessTableWidget(QWidget):
         self._model.set_processes(rows)
         if keep is not None:
             self._reselect(keep)
+        self._sync_kill_enabled()
 
     def selected_pid(self) -> int | None:
+        proc = self.selected_process()
+        return proc.pid if proc is not None else None
+
+    def selected_process(self) -> ProcessInfo | None:
         index = self._view.selectionModel().currentIndex()
         if not index.isValid():
             return None
         source = self._proxy.mapToSource(index)
-        return self._model.pid_at(source.row())
+        return self._model.proc_at(source.row())
+
+    def _sync_kill_enabled(self, *args: object) -> None:
+        self._kill_button.setEnabled(self.selected_process() is not None)
+
+    def _on_kill_clicked(self) -> None:
+        proc = self.selected_process()
+        if proc is None:
+            return
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle("Terminate process")
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setText(f"Terminate “{proc.name}” (PID {proc.pid})?")
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+        self._report(proc, terminate_process(proc.pid))
+
+    def _report(self, proc: ProcessInfo, outcome: KillOutcome) -> None:
+        if outcome in (KillOutcome.TERMINATED, KillOutcome.ALREADY_GONE):
+            return
+        if outcome is KillOutcome.ACCESS_DENIED:
+            text = f"Cannot terminate “{proc.name}” — it needs administrator rights."
+        else:
+            text = f"Could not terminate “{proc.name}”. Please try again."
+        QMessageBox.information(self, "Terminate process", text)
 
     def _reselect(self, pid: int) -> None:
         for row in range(self._model.rowCount()):
