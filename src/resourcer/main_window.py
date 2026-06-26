@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QMainWindow,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from .metrics.models import MetricsSample
+from .metrics.models import MetricsSample, ProcessInfo
 from .metrics.worker import MetricsService
 from .ui.charts import CpuChart, TimeSeriesChart
+from .ui.process_table import ProcessTableWidget
 from .ui.widgets import StatCard
 from .util.constants import APP_NAME, APP_VERSION
 from .util.format import human_bytes, human_rate
@@ -54,10 +57,13 @@ class MainWindow(QMainWindow):
         self._card_down = StatCard("NET DOWN", accent=NET_RECV_COLOR)
         self._card_up = StatCard("NET UP", accent=NET_SENT_COLOR)
 
+        self._process_table = ProcessTableWidget()
+
         self.setCentralWidget(self._build_central())
 
         self._service = MetricsService()
         self._service.worker.sample_ready.connect(self._on_sample)
+        self._service.worker.processes_ready.connect(self._on_processes)
         self._service.start()
 
     def _build_central(self) -> QWidget:
@@ -73,12 +79,20 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._mem_chart, 0, 1)
         grid.addWidget(self._disk_chart, 1, 0)
         grid.addWidget(self._net_chart, 1, 1)
+        charts = QWidget()
+        charts.setLayout(grid)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(charts)
+        splitter.addWidget(self._process_table)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
 
         central = QWidget()
         outer = QVBoxLayout(central)
         outer.setContentsMargins(8, 8, 8, 8)
         outer.addLayout(toolbar)
-        outer.addLayout(grid, 1)
+        outer.addWidget(splitter, 1)
         return central
 
     def _on_sample(self, sample: MetricsSample) -> None:
@@ -95,6 +109,9 @@ class MainWindow(QMainWindow):
         self._card_ram.set_value(f"{sample.mem_percent:.0f}%")
         self._card_down.set_value(human_rate(sample.net_recv_rate))
         self._card_up.set_value(human_rate(sample.net_sent_rate))
+
+    def _on_processes(self, rows: list[ProcessInfo]) -> None:
+        self._process_table.update_processes(rows)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._service.shutdown()
