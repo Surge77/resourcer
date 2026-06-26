@@ -265,23 +265,23 @@ This is the one outward/destructive action; treat carefully (security + patterns
 Each phase: branch `feature/<phase>`, write failing tests first where logic exists, implement,
 run `pyright` + `pytest`, then `--no-ff` merge.
 
-- [ ] **Phase 0 — Skeleton.** Repo `git init`; venv; pinned deps; `pyrightconfig.json`,
+- [x] **Phase 0 — Skeleton.** Repo `git init`; venv; pinned deps; `pyrightconfig.json`,
       `pytest.ini`, `.gitignore`; empty package; a bare `MainWindow` that opens. Type gate +
       empty test suite green. Run `pip-audit`.
-- [ ] **Phase 1 — Pure logic (TDD).** `util/format.py`, `metrics/models.py`,
+- [x] **Phase 1 — Pure logic (TDD).** `util/format.py`, `metrics/models.py`,
       `metrics/buffers.py` with full tests. No Qt, no psutil yet.
-- [ ] **Phase 2 — Sampler (TDD).** `metrics/sampler.py` with psutil monkeypatched in tests;
+- [x] **Phase 2 — Sampler (TDD).** `metrics/sampler.py` with psutil monkeypatched in tests;
       rate math + Windows gotchas covered.
-- [ ] **Phase 3 — Worker thread.** `metrics/worker.py`; wire signal to a slot that just
+- [x] **Phase 3 — Worker thread.** `metrics/worker.py`; wire signal to a slot that just
       `print`s samples. **Verify UI stays responsive** while sampling. Clean shutdown.
-- [ ] **Phase 4 — First live chart.** One CPU-overall pyqtgraph chart fed by the signal +
+- [x] **Phase 4 — First live chart.** One CPU-overall pyqtgraph chart fed by the signal +
       ring buffer. The "it's alive" moment.
-- [ ] **Phase 5 — All charts + stat cards.** Per-core CPU, memory, disk, network; toolbar cards.
-- [ ] **Phase 6 — Process table.** Model/view + sort + name filter, 2 s refresh.
-- [ ] **Phase 7 — Kill + polish.** Confirmation + error handling; dark theme; poll-interval
+- [x] **Phase 5 — All charts + stat cards.** Per-core CPU, memory, disk, network; toolbar cards.
+- [x] **Phase 6 — Process table.** Model/view + sort + name filter, 2 s refresh.
+- [x] **Phase 7 — Kill + polish.** Confirmation + error handling; dark theme; poll-interval
       selector; About dialog.
-- [ ] **Phase 8 — Package & document.** PyInstaller build; `README.md` with screenshots and
-      the measured numbers from the Definition of Done.
+- [x] **Phase 8 — Package & document.** PyInstaller build; `README.md` with the measured
+      numbers from the Definition of Done.
 
 ---
 
