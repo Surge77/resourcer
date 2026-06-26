@@ -21,6 +21,8 @@ from PySide6.QtCore import (
 from ..util.constants import POLL_INTERVAL_MS, PROCESS_INTERVAL_MS
 from .sampler import Sampler
 
+_BLOCKING = Qt.ConnectionType.BlockingQueuedConnection
+
 
 class MetricsWorker(QObject):
     sample_ready = Signal(object)      # MetricsSample
@@ -83,8 +85,7 @@ class MetricsService:
     def shutdown(self) -> None:
         """Stop timers in the worker thread, then quit + wait — no crash on exit."""
         if self._thread.isRunning():
-            QMetaObject.invokeMethod(
-                self._worker, "stop", Qt.ConnectionType.BlockingQueuedConnection
-            )
+            # PySide6's stub types `member` as bytes, but str is correct at runtime.
+            QMetaObject.invokeMethod(self._worker, "stop", _BLOCKING)  # type: ignore[call-overload]
             self._thread.quit()
             self._thread.wait()
