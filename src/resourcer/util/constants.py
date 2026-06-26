@@ -14,6 +14,12 @@ HISTORY_POINTS = HISTORY_WINDOW_SECONDS * 1000 // POLL_INTERVAL_MS  # 60 points
 # Process table.
 PROCESS_TOP_N = 300              # cap rows rebuilt per refresh
 
+# Process kill: how long to wait for graceful terminate before force kill.
+KILL_WAIT_SECONDS = 0.5
+
+# Poll-interval selector choices: (label, milliseconds).
+POLL_INTERVAL_CHOICES = (("1 s", 1000), ("2 s", 2000), ("5 s", 5000))
+
 # Byte formatting.
 BYTE_UNIT = 1024.0
 BYTE_SUFFIXES = ("B", "KB", "MB", "GB", "TB", "PB")
