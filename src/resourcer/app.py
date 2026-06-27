@@ -17,6 +17,7 @@ def run() -> int:
     configure_theme()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setOrganizationName(APP_NAME)  # gives QSettings a stable storage location
     QApplication.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
 
     window = MainWindow()

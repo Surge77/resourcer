@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QByteArray, QSettings
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .metrics.alerts import SustainedThreshold
 from .metrics.models import MetricsSample, ProcessInfo
 from .metrics.summary import summarize
 from .metrics.worker import MetricsService
@@ -23,9 +25,19 @@ from .ui.disk_panel import DiskPanel
 from .ui.net_panel import NetPanel
 from .ui.overview import OverviewPanel
 from .ui.process_table import ProcessTableWidget
-from .util.constants import APP_NAME, APP_VERSION, POLL_INTERVAL_CHOICES
+from .util.constants import (
+    ALERT_DURATION_SECONDS,
+    ALERT_PERCENT,
+    APP_NAME,
+    APP_VERSION,
+    POLL_INTERVAL_CHOICES,
+)
 from .util.format import human_bytes, human_rate
 from .util.style import DARK_STYLESHEET
+
+_KEY_GEOMETRY = "window/geometry"
+_KEY_INTERVAL = "poll/interval_index"
+_KEY_PER_CORE = "processes/per_core"
 
 MEM_COLOR = "#569cd6"
 DISK_READ_COLOR = "#4ec9b0"
@@ -69,6 +81,11 @@ class MainWindow(QMainWindow):
         self._process_table = ProcessTableWidget()
         self._disk_panel = DiskPanel()
         self._net_panel = NetPanel()
+        self._add_chart_tooltips()
+
+        self._cpu_alert = SustainedThreshold(ALERT_PERCENT, ALERT_DURATION_SECONDS)
+        self._mem_alert = SustainedThreshold(ALERT_PERCENT, ALERT_DURATION_SECONDS)
+        self._settings = QSettings()
 
         self.setCentralWidget(self._build_central())
 
@@ -78,6 +95,7 @@ class MainWindow(QMainWindow):
         self._service.worker.partitions_ready.connect(self._disk_panel.set_partitions)
         self._service.worker.interfaces_ready.connect(self._net_panel.set_interfaces)
         self._service.start()
+        self._restore_settings()
 
     def _build_menu(self) -> None:
         help_menu = self.menuBar().addMenu("Help")
@@ -144,6 +162,45 @@ class MainWindow(QMainWindow):
         page.setLayout(grid)
         return page
 
+    def _add_chart_tooltips(self) -> None:
+        self._cpu_chart.setToolTip(
+            "Processor load over the last 60s. White = overall; thin lines = per core.\n"
+            "Dashed line marks 80%."
+        )
+        self._mem_chart.setToolTip("Share of RAM in use over the last 60s. Dashed line marks 80%.")
+        self._disk_chart.setToolTip("Bytes read (green) and written (orange) per second.")
+        self._net_chart.setToolTip("Bytes received (down) and sent (up) per second.")
+
+    def _evaluate_alerts(self, sample: MetricsSample) -> None:
+        breaches: list[str] = []
+        if self._cpu_alert.update(sample.cpu_overall, sample.ts):
+            breaches.append("CPU")
+        if self._mem_alert.update(sample.mem_percent, sample.ts):
+            breaches.append("memory")
+        if breaches:
+            self.statusBar().showMessage(
+                f"⚠  High {' and '.join(breaches)} — "
+                f"above {ALERT_PERCENT:.0f}% for {ALERT_DURATION_SECONDS:.0f}s+"
+            )
+        else:
+            self.statusBar().clearMessage()
+
+    def _restore_settings(self) -> None:
+        geometry = self._settings.value(_KEY_GEOMETRY)
+        if isinstance(geometry, QByteArray):
+            self.restoreGeometry(geometry)
+        raw_index = self._settings.value(_KEY_INTERVAL, 0)
+        index = int(raw_index) if isinstance(raw_index, (int, str)) else 0
+        if 0 <= index < self._interval_combo.count():
+            self._interval_combo.setCurrentIndex(index)
+        per_core = str(self._settings.value(_KEY_PER_CORE, "false")).lower() == "true"
+        self._process_table.set_per_core(per_core)
+
+    def _save_settings(self) -> None:
+        self._settings.setValue(_KEY_GEOMETRY, self.saveGeometry())
+        self._settings.setValue(_KEY_INTERVAL, self._interval_combo.currentIndex())
+        self._settings.setValue(_KEY_PER_CORE, self._process_table.is_per_core())
+
     def _on_sample(self, sample: MetricsSample) -> None:
         self._cpu_chart.push(sample.cpu_overall, sample.cpu_per_core)
         self._mem_chart.push({"mem": sample.mem_percent})
@@ -169,12 +226,14 @@ class MainWindow(QMainWindow):
         )
 
         self._overview.set_sample(sample)
+        self._evaluate_alerts(sample)
 
     def _on_processes(self, rows: list[ProcessInfo]) -> None:
         self._process_table.update_processes(rows)
         self._overview.set_summary(summarize(rows))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._save_settings()
         self._service.shutdown()
         super().closeEvent(event)
 

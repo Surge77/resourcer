@@ -21,6 +21,7 @@ from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
 )
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -49,6 +50,27 @@ _HEADERS = ("PID", "Name", "CPU %", "Memory", "Status", "Threads", "User", "Upti
 _RIGHT = {_COL_PID, _COL_CPU, _COL_MEM, _COL_THREADS, _COL_UPTIME}
 _SORT_ROLE = int(Qt.ItemDataRole.UserRole)
 _DASH = "—"
+
+_HEAT_HIGH, _HEAT_MED = 80.0, 50.0
+_HEADER_TIPS = {
+    _COL_PID: "Process identifier.",
+    _COL_NAME: "Executable name.",
+    _COL_CPU: "CPU usage. Summed across cores (can exceed 100%) unless “CPU ÷ cores” is on.",
+    _COL_MEM: "Working-set memory (RAM) held by the process.",
+    _COL_STATUS: "OS scheduling state — running, sleeping, stopped…",
+    _COL_THREADS: "Number of threads in the process.",
+    _COL_USER: "Account the process runs as.",
+    _COL_UPTIME: "How long the process has been running.",
+}
+
+
+def _heat_brush(cpu_percent: float) -> QBrush | None:
+    """Tint a row by CPU load so hot processes stand out at a glance."""
+    if cpu_percent >= _HEAT_HIGH:
+        return QBrush(QColor(209, 105, 105, 70))
+    if cpu_percent >= _HEAT_MED:
+        return QBrush(QColor(209, 170, 105, 55))
+    return None
 
 
 class ProcessTableModel(QAbstractTableModel):
@@ -85,8 +107,12 @@ class ProcessTableModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(_HEADERS)
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = 0) -> Any:
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
             return _HEADERS[section]
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return _HEADER_TIPS.get(section)
         return None
 
     def data(self, index: _Index, role: int = 0) -> Any:
@@ -100,6 +126,8 @@ class ProcessTableModel(QAbstractTableModel):
             return _sort_key(proc, col, self._now)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in _RIGHT:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if role == Qt.ItemDataRole.BackgroundRole:
+            return _heat_brush(proc.cpu_percent / self._cpu_divisor)
         return None
 
 
@@ -214,6 +242,12 @@ class ProcessTableWidget(QWidget):
         if not index.isValid():
             return None
         return self._model.proc_at(self._proxy.mapToSource(index).row())
+
+    def is_per_core(self) -> bool:
+        return self._per_core.isChecked()
+
+    def set_per_core(self, checked: bool) -> None:
+        self._per_core.setChecked(checked)
 
     def _on_per_core_toggled(self, checked: bool) -> None:
         divisor = float(os.cpu_count() or 1) if checked else 1.0

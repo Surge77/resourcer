@@ -303,9 +303,10 @@ boundary, Qt/OS calls E2E-only. Branch-per-phase, `--no-ff` merge.
       open files, connections, cmdline, exe path) on double-click / right-click. **Per-drive
       capacity** bars (`disk_usage` per partition) in a new Disks tab. _(Per-interface
       network breakdown deferred to Phase 12.)_
-- [~] **Phase 12 — Insight + polish.** _Done:_ per-interface network breakdown (Disks &
-      Network tab) and CSV snapshot export. _Remaining:_ metric tooltips/explanations, row
-      heat-coloring for hot processes, threshold **alerts**, settings persistence.
+- [x] **Phase 12 — Insight + polish.** Per-interface network breakdown (Disks & Network
+      tab); CSV snapshot export; column + chart **tooltips**; CPU **heat-coloring** of hot
+      process rows; sustained-load **alerts** (CPU/memory ≥ 90% for 10s → status-bar
+      warning); **settings persistence** (window geometry, poll interval, per-core toggle).
 
 ---
 

@@ -28,3 +28,7 @@ BYTE_SUFFIXES = ("B", "KB", "MB", "GB", "TB", "PB")
 # Percent bounds.
 PERCENT_MIN = 0.0
 PERCENT_MAX = 100.0
+
+# Sustained-load alert: fire when CPU/memory stays at/above this for this long.
+ALERT_PERCENT = 90.0
+ALERT_DURATION_SECONDS = 10.0
