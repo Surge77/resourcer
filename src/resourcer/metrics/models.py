@@ -34,6 +34,13 @@ class ProcessInfo:
 
 
 @dataclass(frozen=True)
+class InterfaceRates:
+    name: str
+    sent_rate: float               # bytes/sec
+    recv_rate: float               # bytes/sec
+
+
+@dataclass(frozen=True)
 class PartitionUsage:
     mountpoint: str
     fstype: str

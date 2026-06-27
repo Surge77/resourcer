@@ -21,19 +21,23 @@ from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
 )
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
+from ..metrics.export import processes_to_csv
 from ..metrics.models import ProcessInfo
 from ..util.format import human_bytes, human_duration
 from .process_menu import ProcessActions
@@ -46,6 +50,27 @@ _HEADERS = ("PID", "Name", "CPU %", "Memory", "Status", "Threads", "User", "Upti
 _RIGHT = {_COL_PID, _COL_CPU, _COL_MEM, _COL_THREADS, _COL_UPTIME}
 _SORT_ROLE = int(Qt.ItemDataRole.UserRole)
 _DASH = "—"
+
+_HEAT_HIGH, _HEAT_MED = 80.0, 50.0
+_HEADER_TIPS = {
+    _COL_PID: "Process identifier.",
+    _COL_NAME: "Executable name.",
+    _COL_CPU: "CPU usage. Summed across cores (can exceed 100%) unless “CPU ÷ cores” is on.",
+    _COL_MEM: "Working-set memory (RAM) held by the process.",
+    _COL_STATUS: "OS scheduling state — running, sleeping, stopped…",
+    _COL_THREADS: "Number of threads in the process.",
+    _COL_USER: "Account the process runs as.",
+    _COL_UPTIME: "How long the process has been running.",
+}
+
+
+def _heat_brush(cpu_percent: float) -> QBrush | None:
+    """Tint a row by CPU load so hot processes stand out at a glance."""
+    if cpu_percent >= _HEAT_HIGH:
+        return QBrush(QColor(209, 105, 105, 70))
+    if cpu_percent >= _HEAT_MED:
+        return QBrush(QColor(209, 170, 105, 55))
+    return None
 
 
 class ProcessTableModel(QAbstractTableModel):
@@ -82,8 +107,12 @@ class ProcessTableModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(_HEADERS)
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = 0) -> Any:
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
             return _HEADERS[section]
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return _HEADER_TIPS.get(section)
         return None
 
     def data(self, index: _Index, role: int = 0) -> Any:
@@ -97,6 +126,8 @@ class ProcessTableModel(QAbstractTableModel):
             return _sort_key(proc, col, self._now)
         if role == Qt.ItemDataRole.TextAlignmentRole and col in _RIGHT:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if role == Qt.ItemDataRole.BackgroundRole:
+            return _heat_brush(proc.cpu_percent / self._cpu_divisor)
         return None
 
 
@@ -140,6 +171,7 @@ class ProcessTableWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._actions = ProcessActions(self)
+        self._rows: list[ProcessInfo] = []
         self._model = ProcessTableModel(self)
         self._proxy = QSortFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
@@ -157,6 +189,10 @@ class ProcessTableWidget(QWidget):
             "instead of summed across cores (can exceed 100%)."
         )
         self._per_core.toggled.connect(self._on_per_core_toggled)
+
+        self._export_button = QPushButton("Export CSV")
+        self._export_button.setToolTip("Save the current process list to a CSV file.")
+        self._export_button.clicked.connect(self._on_export)
 
         self._end_button = QPushButton("End task")
         self._end_button.setEnabled(False)
@@ -181,6 +217,7 @@ class ProcessTableWidget(QWidget):
         top.addWidget(QLabel("Processes"))
         top.addWidget(self._search, 1)
         top.addWidget(self._per_core)
+        top.addWidget(self._export_button)
         top.addWidget(self._end_button)
 
         layout = QVBoxLayout(self)
@@ -190,6 +227,7 @@ class ProcessTableWidget(QWidget):
 
     def update_processes(self, rows: list[ProcessInfo]) -> None:
         keep = self.selected_pid()
+        self._rows = rows
         self._model.set_processes(rows)
         if keep is not None:
             self._reselect(keep)
@@ -204,6 +242,12 @@ class ProcessTableWidget(QWidget):
         if not index.isValid():
             return None
         return self._model.proc_at(self._proxy.mapToSource(index).row())
+
+    def is_per_core(self) -> bool:
+        return self._per_core.isChecked()
+
+    def set_per_core(self, checked: bool) -> None:
+        self._per_core.setChecked(checked)
 
     def _on_per_core_toggled(self, checked: bool) -> None:
         divisor = float(os.cpu_count() or 1) if checked else 1.0
@@ -221,6 +265,22 @@ class ProcessTableWidget(QWidget):
         proc = self.selected_process()
         if proc is not None:
             self._actions.show_details(proc)
+
+    def _on_export(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export processes", "processes.csv", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(processes_to_csv(self._rows))
+        except OSError:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Export failed")
+            box.setText("Could not write the file to that location.")
+            box.exec()
 
     def _show_context_menu(self, pos: QPoint) -> None:
         index = self._view.indexAt(pos)
