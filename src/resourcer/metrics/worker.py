@@ -18,21 +18,27 @@ from PySide6.QtCore import (
     Slot,
 )
 
-from ..util.constants import POLL_INTERVAL_MS, PROCESS_INTERVAL_MS
+from ..util.constants import (
+    PARTITION_INTERVAL_MS,
+    POLL_INTERVAL_MS,
+    PROCESS_INTERVAL_MS,
+)
 from .sampler import Sampler
 
 _BLOCKING = Qt.ConnectionType.BlockingQueuedConnection
 
 
 class MetricsWorker(QObject):
-    sample_ready = Signal(object)      # MetricsSample
-    processes_ready = Signal(object)   # list[ProcessInfo]
+    sample_ready = Signal(object)       # MetricsSample
+    processes_ready = Signal(object)    # list[ProcessInfo]
+    partitions_ready = Signal(object)   # list[PartitionUsage]
 
     def __init__(self, sampler: Sampler | None = None) -> None:
         super().__init__()
         self._sampler = sampler or Sampler()
         self._metrics_timer: QTimer | None = None
         self._process_timer: QTimer | None = None
+        self._partition_timer: QTimer | None = None
 
     @Slot()
     def start(self) -> None:
@@ -46,16 +52,21 @@ class MetricsWorker(QObject):
         self._process_timer.timeout.connect(self._emit_processes)
         self._process_timer.start()
 
-        # Emit one sample immediately so the UI isn't blank for a full second.
+        self._partition_timer = QTimer(self)
+        self._partition_timer.setInterval(PARTITION_INTERVAL_MS)
+        self._partition_timer.timeout.connect(self._emit_partitions)
+        self._partition_timer.start()
+
+        # Emit one of each immediately so the UI isn't blank on launch.
         self._emit_metrics()
         self._emit_processes()
+        self._emit_partitions()
 
     @Slot()
     def stop(self) -> None:
-        if self._metrics_timer is not None:
-            self._metrics_timer.stop()
-        if self._process_timer is not None:
-            self._process_timer.stop()
+        for timer in (self._metrics_timer, self._process_timer, self._partition_timer):
+            if timer is not None:
+                timer.stop()
 
     def set_metrics_interval(self, interval_ms: int) -> None:
         # No @Slot here: a queued signal delivers to a plain method by the
@@ -71,6 +82,10 @@ class MetricsWorker(QObject):
     @Slot()
     def _emit_processes(self) -> None:
         self.processes_ready.emit(self._sampler.sample_processes())
+
+    @Slot()
+    def _emit_partitions(self) -> None:
+        self.partitions_ready.emit(self._sampler.sample_partitions())
 
 
 class MetricsService(QObject):

@@ -34,6 +34,15 @@ class ProcessInfo:
 
 
 @dataclass(frozen=True)
+class PartitionUsage:
+    mountpoint: str
+    fstype: str
+    total: int                     # bytes
+    used: int                      # bytes
+    percent: float                 # 0..100
+
+
+@dataclass(frozen=True)
 class ProcessSummary:
     """Aggregates derived from one process-list snapshot (pure, UI-agnostic)."""
 

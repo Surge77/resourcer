@@ -191,6 +191,26 @@ class TestProcessSampling:
         result = sampler.sample_processes()
         assert [p.pid for p in result] == [1]
 
+    def test_partitions_mapped_and_unreadable_skipped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        parts = [
+            SimpleNamespace(mountpoint="C:\\", fstype="NTFS"),
+            SimpleNamespace(mountpoint="D:\\", fstype=""),  # empty CD drive
+        ]
+        monkeypatch.setattr(psutil, "disk_partitions", lambda all=False: parts)
+
+        def disk_usage(mount: str) -> SimpleNamespace:
+            if mount == "D:\\":
+                raise PermissionError("no media")
+            return SimpleNamespace(total=500, used=200, percent=40.0)
+
+        monkeypatch.setattr(psutil, "disk_usage", disk_usage)
+        result = Sampler(clock=FakeClock()).sample_partitions()
+        assert [p.mountpoint for p in result] == ["C:\\"]
+        assert result[0].percent == 40.0
+        assert result[0].used == 200
+
     def test_missing_name_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
         procs = [FakeProc({"pid": 5, "name": None, "cpu_percent": None,
                            "memory_info": None})]

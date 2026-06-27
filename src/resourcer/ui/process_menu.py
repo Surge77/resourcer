@@ -21,6 +21,7 @@ from ..metrics.process_actions import (
     terminate_one,
     terminate_tree,
 )
+from .process_detail import ProcessDetailDialog
 
 _DESTRUCTIVE = {ActionOutcome.ACCESS_DENIED, ActionOutcome.ERROR}
 
@@ -33,6 +34,8 @@ class ProcessActions:
 
     def menu_for(self, proc: ProcessInfo) -> QMenu:
         menu = QMenu(self._parent)
+        self._add(menu, "Details…", lambda: self.show_details(proc))
+        menu.addSeparator()
         self._add(menu, "End task", lambda: self.end_task(proc))
         self._add(menu, "End process tree", lambda: self.end_tree(proc))
         menu.addSeparator()
@@ -58,6 +61,9 @@ class ProcessActions:
 
     def _simple(self, action, proc: ProcessInfo, verb: str) -> None:
         self._report(action(proc.pid), proc, verb)
+
+    def show_details(self, proc: ProcessInfo) -> None:
+        ProcessDetailDialog(proc.pid, self._parent).exec()
 
     def copy_pid(self, proc: ProcessInfo) -> None:
         QGuiApplication.clipboard().setText(str(proc.pid))

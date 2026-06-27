@@ -172,7 +172,7 @@ class ProcessTableWidget(QWidget):
         self._view.setAlternatingRowColors(True)
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._show_context_menu)
-        self._view.doubleClicked.connect(self._on_end_clicked)
+        self._view.doubleClicked.connect(self._on_double_clicked)
         header = self._view.horizontalHeader()
         header.setSectionResizeMode(_COL_NAME, QHeaderView.ResizeMode.Stretch)
         self._view.selectionModel().selectionChanged.connect(self._sync_buttons)
@@ -216,6 +216,11 @@ class ProcessTableWidget(QWidget):
         proc = self.selected_process()
         if proc is not None:
             self._actions.end_task(proc)
+
+    def _on_double_clicked(self, *args: object) -> None:
+        proc = self.selected_process()
+        if proc is not None:
+            self._actions.show_details(proc)
 
     def _show_context_menu(self, pos: QPoint) -> None:
         index = self._view.indexAt(pos)

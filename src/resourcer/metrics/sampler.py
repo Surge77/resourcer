@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import psutil
 
-from .models import MetricsSample, ProcessInfo
+from .models import MetricsSample, PartitionUsage, ProcessInfo
 
 _PROC_ATTRS = [
     "pid", "name", "cpu_percent", "memory_info",
@@ -97,6 +97,27 @@ class Sampler:
                     num_threads=int(info.get("num_threads") or 0),
                     username=_short_username(info.get("username")),
                     create_time=float(info.get("create_time") or 0.0),
+                )
+            )
+        return out
+
+
+    def sample_partitions(self) -> list[PartitionUsage]:
+        """Capacity per mounted, physical partition. Skips unreadable drives
+        (empty CD/card readers raise ``PermissionError`` on Windows)."""
+        out: list[PartitionUsage] = []
+        for part in psutil.disk_partitions(all=False):
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+            except (PermissionError, OSError):
+                continue
+            out.append(
+                PartitionUsage(
+                    mountpoint=part.mountpoint,
+                    fstype=part.fstype,
+                    total=int(usage.total),
+                    used=int(usage.used),
+                    percent=float(usage.percent),
                 )
             )
         return out

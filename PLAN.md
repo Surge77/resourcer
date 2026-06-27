@@ -299,11 +299,13 @@ boundary, Qt/OS calls E2E-only. Branch-per-phase, `--no-ff` merge.
 - [ ] **Phase 10 — Understandable layout.** Tabbed shell (Overview / Performance /
       Processes / Disks & Network). **System summary** panel: uptime, process/thread counts,
       top CPU + memory consumer, memory breakdown (used / cached / available).
-- [ ] **Phase 11 — Drill-down + storage.** Process **detail dialog** (threads, handles,
-      open files, connections, cmdline, exe path). **Per-drive capacity** bars
-      (`disk_usage` per partition). Per-interface network breakdown.
-- [ ] **Phase 12 — Insight + polish.** Metric tooltips/explanations, row heat-coloring for
-      hot processes, threshold **alerts**, CSV/JSON snapshot export, settings persistence.
+- [x] **Phase 11 — Drill-down + storage.** Process **detail dialog** (threads, handles,
+      open files, connections, cmdline, exe path) on double-click / right-click. **Per-drive
+      capacity** bars (`disk_usage` per partition) in a new Disks tab. _(Per-interface
+      network breakdown deferred to Phase 12.)_
+- [ ] **Phase 12 — Insight + polish.** Per-interface network breakdown, metric
+      tooltips/explanations, row heat-coloring for hot processes, threshold **alerts**,
+      CSV/JSON snapshot export, settings persistence.
 
 ---
 

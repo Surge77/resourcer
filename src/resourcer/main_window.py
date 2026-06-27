@@ -19,6 +19,7 @@ from .metrics.models import MetricsSample, ProcessInfo
 from .metrics.summary import summarize
 from .metrics.worker import MetricsService
 from .ui.charts import CpuChart, TimeSeriesChart
+from .ui.disk_panel import DiskPanel
 from .ui.overview import OverviewPanel
 from .ui.process_table import ProcessTableWidget
 from .util.constants import APP_NAME, APP_VERSION, POLL_INTERVAL_CHOICES
@@ -65,12 +66,14 @@ class MainWindow(QMainWindow):
             legend=True,
         )
         self._process_table = ProcessTableWidget()
+        self._disk_panel = DiskPanel()
 
         self.setCentralWidget(self._build_central())
 
         self._service = MetricsService()
         self._service.worker.sample_ready.connect(self._on_sample)
         self._service.worker.processes_ready.connect(self._on_processes)
+        self._service.worker.partitions_ready.connect(self._disk_panel.set_partitions)
         self._service.start()
 
     def _build_menu(self) -> None:
@@ -105,6 +108,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._overview, "Overview")
         tabs.addTab(self._build_performance_tab(), "Performance")
         tabs.addTab(self._process_table, "Processes")
+        tabs.addTab(self._disk_panel, "Disks")
 
         central = QWidget()
         outer = QVBoxLayout(central)
