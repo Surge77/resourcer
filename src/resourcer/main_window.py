@@ -20,6 +20,7 @@ from .metrics.summary import summarize
 from .metrics.worker import MetricsService
 from .ui.charts import CpuChart, TimeSeriesChart
 from .ui.disk_panel import DiskPanel
+from .ui.net_panel import NetPanel
 from .ui.overview import OverviewPanel
 from .ui.process_table import ProcessTableWidget
 from .util.constants import APP_NAME, APP_VERSION, POLL_INTERVAL_CHOICES
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         )
         self._process_table = ProcessTableWidget()
         self._disk_panel = DiskPanel()
+        self._net_panel = NetPanel()
 
         self.setCentralWidget(self._build_central())
 
@@ -74,6 +76,7 @@ class MainWindow(QMainWindow):
         self._service.worker.sample_ready.connect(self._on_sample)
         self._service.worker.processes_ready.connect(self._on_processes)
         self._service.worker.partitions_ready.connect(self._disk_panel.set_partitions)
+        self._service.worker.interfaces_ready.connect(self._net_panel.set_interfaces)
         self._service.start()
 
     def _build_menu(self) -> None:
@@ -108,7 +111,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._overview, "Overview")
         tabs.addTab(self._build_performance_tab(), "Performance")
         tabs.addTab(self._process_table, "Processes")
-        tabs.addTab(self._disk_panel, "Disks")
+        tabs.addTab(self._build_storage_tab(), "Disks & Network")
 
         central = QWidget()
         outer = QVBoxLayout(central)
@@ -116,6 +119,19 @@ class MainWindow(QMainWindow):
         outer.addLayout(toolbar)
         outer.addWidget(tabs, 1)
         return central
+
+    def _build_storage_tab(self) -> QWidget:
+        page = QWidget()
+        box = QVBoxLayout(page)
+        box.setContentsMargins(12, 12, 12, 12)
+        box.setSpacing(10)
+        box.addWidget(_section("Drives"))
+        box.addWidget(self._disk_panel)
+        box.addSpacing(8)
+        box.addWidget(_section("Network interfaces"))
+        box.addWidget(self._net_panel)
+        box.addStretch(1)
+        return page
 
     def _build_performance_tab(self) -> QWidget:
         grid = QGridLayout()
@@ -161,3 +177,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._service.shutdown()
         super().closeEvent(event)
+
+
+def _section(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setStyleSheet("font-weight:600;font-size:13px;color:#d0d0d0;")
+    return label

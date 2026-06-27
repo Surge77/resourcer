@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import psutil
 
-from .models import MetricsSample, PartitionUsage, ProcessInfo
+from .models import InterfaceRates, MetricsSample, PartitionUsage, ProcessInfo
 
 _PROC_ATTRS = [
     "pid", "name", "cpu_percent", "memory_info",
@@ -36,6 +36,8 @@ class Sampler:
         self._prev_disk_write = 0
         self._prev_net_sent = 0
         self._prev_net_recv = 0
+        self._prev_nic: dict[str, tuple[int, int]] = {}
+        self._prev_nic_ts: float | None = None
         # Prime cpu_percent so the first real reading is meaningful, not 0.0.
         psutil.cpu_percent(interval=None)
         psutil.cpu_percent(interval=None, percpu=True)
@@ -101,6 +103,31 @@ class Sampler:
             )
         return out
 
+
+    def sample_net_interfaces(self) -> list[InterfaceRates]:
+        """Per-NIC send/receive rates. Keeps its own previous-counter cache and
+        timestamp, independent of the aggregate metrics sample."""
+        now = self._clock()
+        elapsed = 0.0 if self._prev_nic_ts is None else now - self._prev_nic_ts
+        per_nic = psutil.net_io_counters(pernic=True)
+
+        out: list[InterfaceRates] = []
+        new_prev: dict[str, tuple[int, int]] = {}
+        for name, counters in per_nic.items():
+            sent, recv = int(counters.bytes_sent), int(counters.bytes_recv)
+            prev_sent, prev_recv = self._prev_nic.get(name, (sent, recv))
+            out.append(
+                InterfaceRates(
+                    name=name,
+                    sent_rate=_rate(sent, prev_sent, elapsed),
+                    recv_rate=_rate(recv, prev_recv, elapsed),
+                )
+            )
+            new_prev[name] = (sent, recv)
+
+        self._prev_nic = new_prev
+        self._prev_nic_ts = now
+        return out
 
     def sample_partitions(self) -> list[PartitionUsage]:
         """Capacity per mounted, physical partition. Skips unreadable drives

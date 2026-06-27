@@ -131,6 +131,40 @@ class TestRateMath:
         assert sample.disk_write_rate == 0.0
 
 
+class TestNetInterfaces:
+    @staticmethod
+    def _patch(monkeypatch: pytest.MonkeyPatch, nics: dict) -> None:
+        monkeypatch.setattr(psutil, "net_io_counters", lambda pernic=False: nics)
+
+    def test_first_sample_rates_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._patch(monkeypatch, {
+            "eth0": SimpleNamespace(bytes_sent=1000, bytes_recv=2000),
+        })
+        result = Sampler(clock=FakeClock(5.0)).sample_net_interfaces()
+        assert result[0].name == "eth0"
+        assert result[0].sent_rate == 0.0
+        assert result[0].recv_rate == 0.0
+
+    def test_rate_is_per_nic_delta(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        clock = FakeClock(5.0)
+        self._patch(monkeypatch, {
+            "eth0": SimpleNamespace(bytes_sent=1000, bytes_recv=2000),
+            "wifi": SimpleNamespace(bytes_sent=10, bytes_recv=10),
+        })
+        sampler = Sampler(clock=clock)
+        sampler.sample_net_interfaces()  # prime
+
+        clock.now = 7.0  # +2s
+        self._patch(monkeypatch, {
+            "eth0": SimpleNamespace(bytes_sent=1000, bytes_recv=6000),
+            "wifi": SimpleNamespace(bytes_sent=10, bytes_recv=10),
+        })
+        rates = {r.name: r for r in sampler.sample_net_interfaces()}
+        assert rates["eth0"].recv_rate == (6000 - 2000) / 2.0  # 2000 B/s
+        assert rates["eth0"].sent_rate == 0.0
+        assert rates["wifi"].recv_rate == 0.0
+
+
 class TestMetricsValues:
     def test_cpu_and_memory_passthrough(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _patch_metrics(

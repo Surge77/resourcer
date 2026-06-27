@@ -24,16 +24,19 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
+from ..metrics.export import processes_to_csv
 from ..metrics.models import ProcessInfo
 from ..util.format import human_bytes, human_duration
 from .process_menu import ProcessActions
@@ -140,6 +143,7 @@ class ProcessTableWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._actions = ProcessActions(self)
+        self._rows: list[ProcessInfo] = []
         self._model = ProcessTableModel(self)
         self._proxy = QSortFilterProxyModel(self)
         self._proxy.setSourceModel(self._model)
@@ -157,6 +161,10 @@ class ProcessTableWidget(QWidget):
             "instead of summed across cores (can exceed 100%)."
         )
         self._per_core.toggled.connect(self._on_per_core_toggled)
+
+        self._export_button = QPushButton("Export CSV")
+        self._export_button.setToolTip("Save the current process list to a CSV file.")
+        self._export_button.clicked.connect(self._on_export)
 
         self._end_button = QPushButton("End task")
         self._end_button.setEnabled(False)
@@ -181,6 +189,7 @@ class ProcessTableWidget(QWidget):
         top.addWidget(QLabel("Processes"))
         top.addWidget(self._search, 1)
         top.addWidget(self._per_core)
+        top.addWidget(self._export_button)
         top.addWidget(self._end_button)
 
         layout = QVBoxLayout(self)
@@ -190,6 +199,7 @@ class ProcessTableWidget(QWidget):
 
     def update_processes(self, rows: list[ProcessInfo]) -> None:
         keep = self.selected_pid()
+        self._rows = rows
         self._model.set_processes(rows)
         if keep is not None:
             self._reselect(keep)
@@ -221,6 +231,22 @@ class ProcessTableWidget(QWidget):
         proc = self.selected_process()
         if proc is not None:
             self._actions.show_details(proc)
+
+    def _on_export(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export processes", "processes.csv", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(processes_to_csv(self._rows))
+        except OSError:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Export failed")
+            box.setText("Could not write the file to that location.")
+            box.exec()
 
     def _show_context_menu(self, pos: QPoint) -> None:
         index = self._view.indexAt(pos)

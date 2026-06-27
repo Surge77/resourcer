@@ -32,6 +32,7 @@ class MetricsWorker(QObject):
     sample_ready = Signal(object)       # MetricsSample
     processes_ready = Signal(object)    # list[ProcessInfo]
     partitions_ready = Signal(object)   # list[PartitionUsage]
+    interfaces_ready = Signal(object)   # list[InterfaceRates]
 
     def __init__(self, sampler: Sampler | None = None) -> None:
         super().__init__()
@@ -50,6 +51,7 @@ class MetricsWorker(QObject):
         self._process_timer = QTimer(self)
         self._process_timer.setInterval(PROCESS_INTERVAL_MS)
         self._process_timer.timeout.connect(self._emit_processes)
+        self._process_timer.timeout.connect(self._emit_interfaces)
         self._process_timer.start()
 
         self._partition_timer = QTimer(self)
@@ -60,6 +62,7 @@ class MetricsWorker(QObject):
         # Emit one of each immediately so the UI isn't blank on launch.
         self._emit_metrics()
         self._emit_processes()
+        self._emit_interfaces()
         self._emit_partitions()
 
     @Slot()
@@ -82,6 +85,10 @@ class MetricsWorker(QObject):
     @Slot()
     def _emit_processes(self) -> None:
         self.processes_ready.emit(self._sampler.sample_processes())
+
+    @Slot()
+    def _emit_interfaces(self) -> None:
+        self.interfaces_ready.emit(self._sampler.sample_net_interfaces())
 
     @Slot()
     def _emit_partitions(self) -> None:

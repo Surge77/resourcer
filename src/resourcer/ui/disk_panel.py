@@ -30,7 +30,6 @@ class DiskPanel(QWidget):
         self._empty = QLabel("Reading drives…")
         self._empty.setStyleSheet("color:#9a9a9a;")
         self._layout.addWidget(self._empty)
-        self._layout.addStretch(1)
 
     def set_partitions(self, parts: list[PartitionUsage]) -> None:
         _clear(self._layout)
@@ -40,7 +39,6 @@ class DiskPanel(QWidget):
             self._layout.addWidget(note)
         for part in parts:
             self._layout.addWidget(_drive_row(part))
-        self._layout.addStretch(1)
 
 
 def _drive_row(part: PartitionUsage) -> QWidget:
