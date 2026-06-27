@@ -285,6 +285,28 @@ run `pyright` + `pytest`, then `--no-ff` merge.
 
 ---
 
+## 10b. v2 — Task Manager Expansion (post-v1)
+
+v1 shipped a passive dashboard. v2 turns it into an *understandable, actionable* task
+manager. Same architecture rules: files < 300 lines, pure logic TDD'd at the sampler
+boundary, Qt/OS calls E2E-only. Branch-per-phase, `--no-ff` merge.
+
+- [ ] **Phase 9 — Meaning + process power.** Chart **readouts** (current · peak + units)
+      and **threshold zones** so each graph states what it means. Richer process columns
+      (Status, Threads, User, Uptime). **Right-click actions**: End task, End process tree,
+      Suspend/Resume, Copy PID, Open file location. Per-process CPU normalization toggle.
+      New testable logic: `human_duration`, `process_actions` (tree collection, suspend).
+- [ ] **Phase 10 — Understandable layout.** Tabbed shell (Overview / Performance /
+      Processes / Disks & Network). **System summary** panel: uptime, process/thread counts,
+      top CPU + memory consumer, memory breakdown (used / cached / available).
+- [ ] **Phase 11 — Drill-down + storage.** Process **detail dialog** (threads, handles,
+      open files, connections, cmdline, exe path). **Per-drive capacity** bars
+      (`disk_usage` per partition). Per-interface network breakdown.
+- [ ] **Phase 12 — Insight + polish.** Metric tooltips/explanations, row heat-coloring for
+      hot processes, threshold **alerts**, CSV/JSON snapshot export, settings persistence.
+
+---
+
 ## 11. Risks & Mitigations
 
 | Risk | Mitigation |

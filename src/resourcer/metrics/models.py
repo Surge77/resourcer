@@ -25,3 +25,7 @@ class ProcessInfo:
     name: str
     cpu_percent: float
     mem_rss: int                   # bytes
+    status: str = ""               # running / sleeping / stopped …
+    num_threads: int = 0
+    username: str = ""
+    create_time: float = 0.0       # epoch seconds; 0.0 = unknown

@@ -14,7 +14,10 @@ import psutil
 
 from .models import MetricsSample, ProcessInfo
 
-_PROC_ATTRS = ["pid", "name", "cpu_percent", "memory_info"]
+_PROC_ATTRS = [
+    "pid", "name", "cpu_percent", "memory_info",
+    "status", "num_threads", "username", "create_time",
+]
 
 
 def _rate(current: float, previous: float, elapsed: float) -> float:
@@ -87,6 +90,17 @@ class Sampler:
                     name=info.get("name") or "?",
                     cpu_percent=float(info.get("cpu_percent") or 0.0),
                     mem_rss=int(mem_info.rss) if mem_info is not None else 0,
+                    status=info.get("status") or "",
+                    num_threads=int(info.get("num_threads") or 0),
+                    username=_short_username(info.get("username")),
+                    create_time=float(info.get("create_time") or 0.0),
                 )
             )
         return out
+
+
+def _short_username(raw: str | None) -> str:
+    """Strip the Windows ``DOMAIN\\`` prefix; leave bare names untouched."""
+    if not raw:
+        return ""
+    return raw.rsplit("\\", 1)[-1]

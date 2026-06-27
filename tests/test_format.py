@@ -2,7 +2,12 @@
 
 import pytest
 
-from resourcer.util.format import clamp_percent, human_bytes, human_rate
+from resourcer.util.format import (
+    clamp_percent,
+    human_bytes,
+    human_duration,
+    human_rate,
+)
 
 
 class TestHumanBytes:
@@ -34,6 +39,28 @@ class TestHumanRate:
 
     def test_zero_rate(self) -> None:
         assert human_rate(0) == "0 B/s"
+
+
+class TestHumanDuration:
+    @pytest.mark.parametrize(
+        "seconds,expected",
+        [
+            (0, "0s"),
+            (5, "5s"),
+            (59, "59s"),
+            (60, "1m 0s"),
+            (125, "2m 5s"),
+            (3600, "1h 0m"),
+            (3661, "1h 1m"),
+            (86400, "1d 0h"),
+            (90000, "1d 1h"),
+        ],
+    )
+    def test_two_largest_units(self, seconds: float, expected: str) -> None:
+        assert human_duration(seconds) == expected
+
+    def test_negative_clamps_to_zero(self) -> None:
+        assert human_duration(-10) == "0s"
 
 
 class TestClampPercent:

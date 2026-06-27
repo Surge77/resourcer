@@ -200,3 +200,30 @@ class TestProcessSampling:
         assert result[0].name == "?"
         assert result[0].cpu_percent == 0.0
         assert result[0].mem_rss == 0
+
+    def test_enriched_fields_mapped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        procs = [FakeProc({
+            "pid": 7, "name": "svc.exe", "cpu_percent": 3.0,
+            "memory_info": SimpleNamespace(rss=2048),
+            "status": "running", "num_threads": 12,
+            "username": "DESKTOP-ABC\\Tejas", "create_time": 1700.0,
+        })]
+        monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
+        result = Sampler(clock=FakeClock()).sample_processes()
+        proc = result[0]
+        assert proc.status == "running"
+        assert proc.num_threads == 12
+        assert proc.username == "Tejas"          # DOMAIN\ prefix stripped
+        assert proc.create_time == 1700.0
+
+    def test_enriched_fields_default_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        procs = [FakeProc({"pid": 8, "name": "x", "cpu_percent": 0.0,
+                           "memory_info": None})]
+        monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
+        proc = Sampler(clock=FakeClock()).sample_processes()[0]
+        assert proc.status == ""
+        assert proc.num_threads == 0
+        assert proc.username == ""
+        assert proc.create_time == 0.0

@@ -27,6 +27,24 @@ def human_rate(bytes_per_second: float) -> str:
     return f"{human_bytes(bytes_per_second)}/s"
 
 
+def human_duration(seconds: float) -> str:
+    """Format an elapsed time using its two largest units (e.g. ``2h 5m``).
+
+    Sub-minute spans show only seconds; negative inputs clamp to ``0s``.
+    """
+    total = int(max(0.0, seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
 def clamp_percent(value: float) -> float:
     """Clamp a percentage to the inclusive 0..100 range."""
     return max(PERCENT_MIN, min(PERCENT_MAX, float(value)))

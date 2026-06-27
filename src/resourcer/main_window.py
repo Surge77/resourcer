@@ -29,6 +29,7 @@ DISK_READ_COLOR = "#4ec9b0"
 DISK_WRITE_COLOR = "#ce9178"
 NET_RECV_COLOR = "#4ec9b0"
 NET_SENT_COLOR = "#ce9178"
+WARN_PERCENT = 80.0  # threshold line on CPU/memory charts
 
 
 class MainWindow(QMainWindow):
@@ -44,9 +45,10 @@ class MainWindow(QMainWindow):
             self._interval_combo.addItem(label, interval_ms)
         self._interval_combo.currentIndexChanged.connect(self._on_interval_changed)
 
-        self._cpu_chart = CpuChart()
+        self._cpu_chart = CpuChart(warn_at=WARN_PERCENT)
         self._mem_chart = TimeSeriesChart(
-            "Memory %", series=[("mem", MEM_COLOR)], y_range=(0.0, 100.0)
+            "Memory %", series=[("mem", MEM_COLOR)], y_range=(0.0, 100.0),
+            warn_at=WARN_PERCENT,
         )
         self._disk_chart = TimeSeriesChart(
             "Disk  R/W  bytes/s",
@@ -134,6 +136,20 @@ class MainWindow(QMainWindow):
         )
         self._net_chart.push(
             {"Down": sample.net_recv_rate, "Up": sample.net_sent_rate}
+        )
+
+        self._cpu_chart.set_readout(
+            f"now {sample.cpu_overall:.0f}%  ·  peak {self._cpu_chart.overall_peak():.0f}%"
+        )
+        self._mem_chart.set_readout(
+            f"now {sample.mem_percent:.0f}%  ·  "
+            f"{human_bytes(sample.mem_used)} / {human_bytes(sample.mem_total)}"
+        )
+        self._disk_chart.set_readout(
+            f"↓ {human_rate(sample.disk_read_rate)}   ↑ {human_rate(sample.disk_write_rate)}"
+        )
+        self._net_chart.set_readout(
+            f"↓ {human_rate(sample.net_recv_rate)}   ↑ {human_rate(sample.net_sent_rate)}"
         )
 
         self._card_cpu.set_value(f"{sample.cpu_overall:.0f}%")
