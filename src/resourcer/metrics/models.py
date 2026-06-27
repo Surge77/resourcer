@@ -17,6 +17,8 @@ class MetricsSample:
     disk_write_rate: float         # bytes/sec
     net_sent_rate: float           # bytes/sec
     net_recv_rate: float           # bytes/sec
+    mem_available: int = 0         # bytes free for new allocations
+    uptime: float = 0.0            # seconds since boot
 
 
 @dataclass(frozen=True)
@@ -29,3 +31,13 @@ class ProcessInfo:
     num_threads: int = 0
     username: str = ""
     create_time: float = 0.0       # epoch seconds; 0.0 = unknown
+
+
+@dataclass(frozen=True)
+class ProcessSummary:
+    """Aggregates derived from one process-list snapshot (pure, UI-agnostic)."""
+
+    count: int
+    thread_total: int
+    top_cpu: ProcessInfo | None
+    top_mem: ProcessInfo | None

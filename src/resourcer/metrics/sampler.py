@@ -30,6 +30,7 @@ def _rate(current: float, previous: float, elapsed: float) -> float:
 class Sampler:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
+        self._boot_time = psutil.boot_time()
         self._prev_ts: float | None = None
         self._prev_disk_read = 0
         self._prev_disk_write = 0
@@ -67,6 +68,8 @@ class Sampler:
             disk_write_rate=_rate(disk_write, self._prev_disk_write, elapsed),
             net_sent_rate=_rate(net_sent, self._prev_net_sent, elapsed),
             net_recv_rate=_rate(net_recv, self._prev_net_recv, elapsed),
+            mem_available=int(getattr(mem, "available", 0)),
+            uptime=max(0.0, time.time() - self._boot_time),
         )
 
         self._prev_ts = now
