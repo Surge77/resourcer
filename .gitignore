@@ -15,7 +15,9 @@ venv/
 # PyInstaller
 build/
 dist/
+# keep the hand-edited spec (icon + bundled assets) under version control
 *.spec
+!resourcer.spec
 
 # IDE / OS
 .vscode/
