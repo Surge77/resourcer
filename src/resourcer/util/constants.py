@@ -6,6 +6,7 @@ APP_VERSION = "0.1.0"
 # Polling cadence.
 POLL_INTERVAL_MS = 1000          # fast timer: system metrics @ 1 Hz
 PROCESS_INTERVAL_MS = 2000       # slow timer: process list @ 0.5 Hz
+PARTITION_INTERVAL_MS = 5000     # slowest timer: disk capacity @ 0.2 Hz
 
 # Chart history window.
 HISTORY_WINDOW_SECONDS = 60

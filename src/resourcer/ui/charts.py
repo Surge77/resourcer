@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
 
 from ..metrics.buffers import SeriesStore
 from ..util.constants import HISTORY_POINTS
@@ -22,6 +23,9 @@ def configure_theme() -> None:
     pg.setConfigOptions(antialias=True)
 
 
+_WARN_PEN = pg.mkPen("#d16969", width=1, style=Qt.PenStyle.DashLine)
+
+
 class TimeSeriesChart(pg.PlotWidget):
     def __init__(
         self,
@@ -31,8 +35,10 @@ class TimeSeriesChart(pg.PlotWidget):
         maxlen: int = HISTORY_POINTS,
         y_label_format: Callable[[float], str] | None = None,
         legend: bool = False,
+        warn_at: float | None = None,
     ) -> None:
         super().__init__()
+        self._base_title = title
         self.setTitle(title, color="#d0d0d0", size="10pt")
         self.showGrid(x=False, y=True, alpha=0.15)
         self.setMenuEnabled(False)
@@ -43,6 +49,8 @@ class TimeSeriesChart(pg.PlotWidget):
             self.getViewBox().setLimits(yMin=y_range[0], yMax=y_range[1])
         if legend:
             self.addLegend(offset=(-10, 10), labelTextColor="#9a9a9a")
+        if warn_at is not None:
+            self.addLine(y=warn_at, pen=_WARN_PEN)
 
         self._format = y_label_format
         self._store = SeriesStore([name for name, _ in series], maxlen)
@@ -50,6 +58,14 @@ class TimeSeriesChart(pg.PlotWidget):
             name: self.plot(pen=pg.mkPen(color, width=2), name=name)
             for name, color in series
         }
+
+    def set_readout(self, text: str) -> None:
+        """Append a live current/peak summary to the chart title."""
+        self.setTitle(f"{self._base_title}   {text}", color="#d0d0d0", size="10pt")
+
+    def series_peak(self, name: str) -> float:
+        array = self._store.as_array(name)
+        return float(array.max()) if array.size else 0.0
 
     def push(self, values: dict[str, float]) -> None:
         for name, value in values.items():
@@ -80,19 +96,31 @@ class CpuChart(pg.PlotWidget):
     built lazily on the first ``push``.
     """
 
-    def __init__(self, maxlen: int = HISTORY_POINTS) -> None:
+    def __init__(self, maxlen: int = HISTORY_POINTS, warn_at: float | None = None) -> None:
         super().__init__()
-        self.setTitle("CPU %  (overall + per-core)", color="#d0d0d0", size="10pt")
+        self._base_title = "CPU %  (overall + per-core)"
+        self.setTitle(self._base_title, color="#d0d0d0", size="10pt")
         self.showGrid(x=False, y=True, alpha=0.15)
         self.setMenuEnabled(False)
         self.setMouseEnabled(x=False, y=False)
         self.hideAxis("bottom")
         self.setYRange(0.0, 100.0)
         self.getViewBox().setLimits(yMin=0.0, yMax=100.0)
+        if warn_at is not None:
+            self.addLine(y=warn_at, pen=_WARN_PEN)
 
         self._maxlen = maxlen
         self._store: SeriesStore | None = None
         self._curves: dict[str, pg.PlotDataItem] = {}
+
+    def set_readout(self, text: str) -> None:
+        self.setTitle(f"{self._base_title}   {text}", color="#d0d0d0", size="10pt")
+
+    def overall_peak(self) -> float:
+        if self._store is None:
+            return 0.0
+        array = self._store.as_array(_OVERALL)
+        return float(array.max()) if array.size else 0.0
 
     def _build(self, core_count: int) -> None:
         names = [_OVERALL] + [f"core{i}" for i in range(core_count)]

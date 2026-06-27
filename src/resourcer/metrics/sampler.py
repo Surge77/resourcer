@@ -12,9 +12,12 @@ from collections.abc import Callable
 
 import psutil
 
-from .models import MetricsSample, ProcessInfo
+from .models import MetricsSample, PartitionUsage, ProcessInfo
 
-_PROC_ATTRS = ["pid", "name", "cpu_percent", "memory_info"]
+_PROC_ATTRS = [
+    "pid", "name", "cpu_percent", "memory_info",
+    "status", "num_threads", "username", "create_time",
+]
 
 
 def _rate(current: float, previous: float, elapsed: float) -> float:
@@ -27,6 +30,7 @@ def _rate(current: float, previous: float, elapsed: float) -> float:
 class Sampler:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
+        self._boot_time = psutil.boot_time()
         self._prev_ts: float | None = None
         self._prev_disk_read = 0
         self._prev_disk_write = 0
@@ -64,6 +68,8 @@ class Sampler:
             disk_write_rate=_rate(disk_write, self._prev_disk_write, elapsed),
             net_sent_rate=_rate(net_sent, self._prev_net_sent, elapsed),
             net_recv_rate=_rate(net_recv, self._prev_net_recv, elapsed),
+            mem_available=int(getattr(mem, "available", 0)),
+            uptime=max(0.0, time.time() - self._boot_time),
         )
 
         self._prev_ts = now
@@ -87,6 +93,38 @@ class Sampler:
                     name=info.get("name") or "?",
                     cpu_percent=float(info.get("cpu_percent") or 0.0),
                     mem_rss=int(mem_info.rss) if mem_info is not None else 0,
+                    status=info.get("status") or "",
+                    num_threads=int(info.get("num_threads") or 0),
+                    username=_short_username(info.get("username")),
+                    create_time=float(info.get("create_time") or 0.0),
                 )
             )
         return out
+
+
+    def sample_partitions(self) -> list[PartitionUsage]:
+        """Capacity per mounted, physical partition. Skips unreadable drives
+        (empty CD/card readers raise ``PermissionError`` on Windows)."""
+        out: list[PartitionUsage] = []
+        for part in psutil.disk_partitions(all=False):
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+            except (PermissionError, OSError):
+                continue
+            out.append(
+                PartitionUsage(
+                    mountpoint=part.mountpoint,
+                    fstype=part.fstype,
+                    total=int(usage.total),
+                    used=int(usage.used),
+                    percent=float(usage.percent),
+                )
+            )
+        return out
+
+
+def _short_username(raw: str | None) -> str:
+    """Strip the Windows ``DOMAIN\\`` prefix; leave bare names untouched."""
+    if not raw:
+        return ""
+    return raw.rsplit("\\", 1)[-1]
