@@ -27,3 +27,6 @@ Thumbs.db
 
 # Type checker
 .pyright/
+
+# Internal developer docs (kept local, not published)
+PLAN.md
