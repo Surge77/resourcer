@@ -31,6 +31,7 @@ class ProcessInfo:
     num_threads: int = 0
     username: str = ""
     create_time: float = 0.0       # epoch seconds; 0.0 = unknown
+    conn_count: int = 0            # active inet connections owned by the process
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,19 @@ class PartitionUsage:
     total: int                     # bytes
     used: int                      # bytes
     percent: float                 # 0..100
+
+
+@dataclass(frozen=True)
+class GpuInfo:
+    index: int
+    name: str
+    util_percent: float            # 0..100
+    mem_used: int                  # bytes
+    mem_total: int                 # bytes
+    mem_percent: float             # 0..100
+    temp_c: float | None = None    # None when the device doesn't report it
+    fan_percent: float | None = None
+    power_w: float | None = None
 
 
 @dataclass(frozen=True)
