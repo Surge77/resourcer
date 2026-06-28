@@ -30,3 +30,6 @@ Thumbs.db
 
 # Internal developer docs (kept local, not published)
 PLAN.md
+
+# crash dumps
+*.stackdump
