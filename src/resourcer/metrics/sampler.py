@@ -82,6 +82,7 @@ class Sampler:
         return sample
 
     def sample_processes(self) -> list[ProcessInfo]:
+        conn_counts = _connection_counts()
         out: list[ProcessInfo] = []
         for proc in psutil.process_iter(_PROC_ATTRS):
             try:
@@ -89,9 +90,10 @@ class Sampler:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
             mem_info = info.get("memory_info")
+            pid = int(info["pid"])
             out.append(
                 ProcessInfo(
-                    pid=int(info["pid"]),
+                    pid=pid,
                     name=info.get("name") or "?",
                     cpu_percent=float(info.get("cpu_percent") or 0.0),
                     mem_rss=int(mem_info.rss) if mem_info is not None else 0,
@@ -99,6 +101,7 @@ class Sampler:
                     num_threads=int(info.get("num_threads") or 0),
                     username=_short_username(info.get("username")),
                     create_time=float(info.get("create_time") or 0.0),
+                    conn_count=conn_counts.get(pid, 0),
                 )
             )
         return out
@@ -148,6 +151,24 @@ class Sampler:
                 )
             )
         return out
+
+
+def _connection_counts() -> dict[int, int]:
+    """Active inet connections per PID, from one syscall. Returns {} if denied.
+
+    A single ``net_connections`` call avoids an N+1 per-process scan. Without
+    admin some rows lack a PID (reported as None) — those are skipped, not crashed.
+    """
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, OSError):
+        return {}
+    counts: dict[int, int] = {}
+    for conn in conns:
+        pid = conn.pid
+        if pid is not None:
+            counts[pid] = counts.get(pid, 0) + 1
+    return counts
 
 
 def _short_username(raw: str | None) -> str:

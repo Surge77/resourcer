@@ -17,7 +17,10 @@ from PySide6.QtWidgets import (
 )
 
 from .metrics.alerts import SustainedThreshold
-from .metrics.models import MetricsSample, ProcessInfo
+from .metrics.anomaly import Anomaly
+from .metrics.history import HistoryStore
+from .metrics.insight import InsightTracker
+from .metrics.models import GpuInfo, MetricsSample, ProcessInfo
 from .metrics.summary import summarize
 from .metrics.worker import MetricsService
 from .ui.charts import CpuChart, TimeSeriesChart
@@ -33,6 +36,7 @@ from .util.constants import (
     POLL_INTERVAL_CHOICES,
 )
 from .util.format import human_bytes, human_rate
+from .util.paths import history_db_path
 from .util.style import DARK_STYLESHEET
 
 _KEY_GEOMETRY = "window/geometry"
@@ -44,7 +48,8 @@ DISK_READ_COLOR = "#4ec9b0"
 DISK_WRITE_COLOR = "#ce9178"
 NET_RECV_COLOR = "#4ec9b0"
 NET_SENT_COLOR = "#ce9178"
-WARN_PERCENT = 80.0  # threshold line on CPU/memory charts
+GPU_COLOR = "#b180d6"
+WARN_PERCENT = 80.0  # threshold line on CPU/memory/GPU charts
 
 
 class MainWindow(QMainWindow):
@@ -78,6 +83,11 @@ class MainWindow(QMainWindow):
             y_label_format=human_bytes,
             legend=True,
         )
+        self._gpu_chart = TimeSeriesChart(
+            "GPU %", series=[("GPU", GPU_COLOR)], y_range=(0.0, 100.0),
+            warn_at=WARN_PERCENT,
+        )
+        self._gpu_chart.hide()  # shown only when an NVIDIA GPU is detected
         self._process_table = ProcessTableWidget()
         self._disk_panel = DiskPanel()
         self._net_panel = NetPanel()
@@ -87,13 +97,19 @@ class MainWindow(QMainWindow):
         self._mem_alert = SustainedThreshold(ALERT_PERCENT, ALERT_DURATION_SECONDS)
         self._settings = QSettings()
 
+        self._history = HistoryStore(history_db_path())
+        self._insight = InsightTracker(self._history)
+        self._insight_label = QLabel()
+        self.statusBar().addPermanentWidget(self._insight_label)
+
         self.setCentralWidget(self._build_central())
 
         self._service = MetricsService()
-        self._service.worker.sample_ready.connect(self._on_sample)
-        self._service.worker.processes_ready.connect(self._on_processes)
-        self._service.worker.partitions_ready.connect(self._disk_panel.set_partitions)
-        self._service.worker.interfaces_ready.connect(self._net_panel.set_interfaces)
+        self._service.metrics.sample_ready.connect(self._on_sample)
+        self._service.metrics.gpus_ready.connect(self._on_gpus)
+        self._service.processes.processes_ready.connect(self._on_processes)
+        self._service.processes.partitions_ready.connect(self._disk_panel.set_partitions)
+        self._service.processes.interfaces_ready.connect(self._net_panel.set_interfaces)
         self._service.start()
         self._restore_settings()
 
@@ -158,6 +174,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._mem_chart, 0, 1)
         grid.addWidget(self._disk_chart, 1, 0)
         grid.addWidget(self._net_chart, 1, 1)
+        grid.addWidget(self._gpu_chart, 2, 0, 1, 2)
         page = QWidget()
         page.setLayout(grid)
         return page
@@ -227,6 +244,36 @@ class MainWindow(QMainWindow):
 
         self._overview.set_sample(sample)
         self._evaluate_alerts(sample)
+        self._report_insight(self._insight.observe(sample))
+
+    def _report_insight(self, spike: Anomaly | None) -> None:
+        if spike is None:
+            self._insight_label.clear()
+            return
+        label = InsightTracker.label(spike.metric)
+        value = (
+            f"{spike.value:.0f}%"
+            if spike.metric in ("cpu", "mem")
+            else human_rate(spike.value)
+        )
+        self._insight_label.setText(f"🔎 {label} spike: {value}")
+
+    def _on_gpus(self, gpus: list[GpuInfo]) -> None:
+        if not gpus:
+            self._gpu_chart.hide()
+            return
+        gpu = gpus[0]
+        self._gpu_chart.show()
+        self._gpu_chart.push({"GPU": gpu.util_percent})
+        parts = [
+            f"now {gpu.util_percent:.0f}%",
+            f"{human_bytes(gpu.mem_used)} / {human_bytes(gpu.mem_total)}",
+        ]
+        if gpu.temp_c is not None:
+            parts.append(f"{gpu.temp_c:.0f}°C")
+        if gpu.power_w is not None:
+            parts.append(f"{gpu.power_w:.0f} W")
+        self._gpu_chart.set_readout("   ·   ".join(parts))
 
     def _on_processes(self, rows: list[ProcessInfo]) -> None:
         self._process_table.update_processes(rows)
@@ -235,6 +282,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._save_settings()
         self._service.shutdown()
+        self._history.close()
         super().closeEvent(event)
 
 

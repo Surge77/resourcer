@@ -196,6 +196,12 @@ class FakeProc:
 
 
 class TestProcessSampling:
+    @pytest.fixture(autouse=True)
+    def _no_real_connections(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Default the boundary call to empty so tests never touch the real OS;
+        # individual tests override this to exercise connection attribution.
+        monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": [])
+
     def test_maps_processes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         procs = [
             FakeProc({
@@ -244,6 +250,39 @@ class TestProcessSampling:
         assert [p.mountpoint for p in result] == ["C:\\"]
         assert result[0].percent == 40.0
         assert result[0].used == 200
+
+    def test_connection_counts_attributed_to_pids(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        procs = [
+            FakeProc({"pid": 1, "name": "browser.exe", "cpu_percent": 0.0,
+                      "memory_info": SimpleNamespace(rss=1)}),
+            FakeProc({"pid": 2, "name": "idle.exe", "cpu_percent": 0.0,
+                      "memory_info": SimpleNamespace(rss=1)}),
+        ]
+        monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
+        conns = [
+            SimpleNamespace(pid=1), SimpleNamespace(pid=1),
+            SimpleNamespace(pid=1), SimpleNamespace(pid=None),  # None PID skipped
+        ]
+        monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": conns)
+        result = {p.pid: p for p in Sampler(clock=FakeClock()).sample_processes()}
+        assert result[1].conn_count == 3
+        assert result[2].conn_count == 0
+
+    def test_connection_counts_denied_yields_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        procs = [FakeProc({"pid": 1, "name": "x.exe", "cpu_percent": 0.0,
+                           "memory_info": SimpleNamespace(rss=1)})]
+        monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
+
+        def denied(kind: str = "inet"):
+            raise psutil.AccessDenied()
+
+        monkeypatch.setattr(psutil, "net_connections", denied)
+        result = Sampler(clock=FakeClock()).sample_processes()
+        assert result[0].conn_count == 0
 
     def test_missing_name_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
         procs = [FakeProc({"pid": 5, "name": None, "cpu_percent": None,

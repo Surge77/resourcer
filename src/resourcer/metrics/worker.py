@@ -1,9 +1,13 @@
-"""MetricsWorker + MetricsService — background sampling on a QThread.
+"""Background sampling on two QThreads — a fast lane and a slow lane.
 
-The worker is a QObject moved onto a dedicated QThread. Its QTimers are created
-*inside* the worker thread (via the ``thread.started`` slot) because a QTimer
-must live in the thread whose event loop drives it. Samples cross back to the UI
-through signals, which Qt delivers auto-queued — thread-safe with no locks.
+The crux of the app is that the UI never blocks. A full process scan
+(``process_iter`` over hundreds of processes) costs 1–4s on Windows, so it runs
+on its own *slow* thread. The *fast* thread samples cheap system metrics + GPU at
+1 Hz, completely insulated from the slow scan — a long process scan can never
+starve the charts. Each worker's QTimers are created inside its own thread (via
+``thread.started``) because a QTimer must live in the thread whose event loop
+drives it. Samples cross to the UI through auto-queued signals — thread-safe, no
+locks.
 """
 
 from __future__ import annotations
@@ -23,35 +27,76 @@ from ..util.constants import (
     POLL_INTERVAL_MS,
     PROCESS_INTERVAL_MS,
 )
+from .gpu import GpuSampler
 from .sampler import Sampler
 
 _BLOCKING = Qt.ConnectionType.BlockingQueuedConnection
 
 
 class MetricsWorker(QObject):
+    """Fast lane: cheap system metrics + GPU at 1 Hz."""
+
     sample_ready = Signal(object)       # MetricsSample
-    processes_ready = Signal(object)    # list[ProcessInfo]
-    partitions_ready = Signal(object)   # list[PartitionUsage]
-    interfaces_ready = Signal(object)   # list[InterfaceRates]
+    gpus_ready = Signal(object)         # list[GpuInfo]
 
     def __init__(self, sampler: Sampler | None = None) -> None:
         super().__init__()
         self._sampler = sampler or Sampler()
+        self._gpu = GpuSampler()
         self._metrics_timer: QTimer | None = None
-        self._process_timer: QTimer | None = None
-        self._partition_timer: QTimer | None = None
 
     @Slot()
     def start(self) -> None:
         self._metrics_timer = QTimer(self)
         self._metrics_timer.setInterval(POLL_INTERVAL_MS)
         self._metrics_timer.timeout.connect(self._emit_metrics)
+        self._metrics_timer.timeout.connect(self._emit_gpus)
         self._metrics_timer.start()
+        # First chart point before GPU init, so cold start isn't blocked by nvmlInit.
+        self._emit_metrics()
+        self._gpu.start()
+        self._emit_gpus()
 
+    @Slot()
+    def stop(self) -> None:
+        if self._metrics_timer is not None:
+            self._metrics_timer.stop()
+        self._gpu.shutdown()
+
+    def set_metrics_interval(self, interval_ms: int) -> None:
+        # No @Slot: a queued signal delivers to a plain method by the receiver's
+        # thread affinity, and PySide6's Slot stub mistypes the single-int overload.
+        if self._metrics_timer is not None:
+            self._metrics_timer.setInterval(interval_ms)
+
+    @Slot()
+    def _emit_metrics(self) -> None:
+        self.sample_ready.emit(self._sampler.sample_metrics())
+
+    @Slot()
+    def _emit_gpus(self) -> None:
+        self.gpus_ready.emit(self._gpu.sample())
+
+
+class ProcessWorker(QObject):
+    """Slow lane: process list, per-NIC rates, and disk capacity."""
+
+    processes_ready = Signal(object)    # list[ProcessInfo]
+    interfaces_ready = Signal(object)   # list[InterfaceRates]
+    partitions_ready = Signal(object)   # list[PartitionUsage]
+
+    def __init__(self, sampler: Sampler | None = None) -> None:
+        super().__init__()
+        self._sampler = sampler or Sampler()
+        self._process_timer: QTimer | None = None
+        self._partition_timer: QTimer | None = None
+
+    @Slot()
+    def start(self) -> None:
         self._process_timer = QTimer(self)
         self._process_timer.setInterval(PROCESS_INTERVAL_MS)
-        self._process_timer.timeout.connect(self._emit_processes)
         self._process_timer.timeout.connect(self._emit_interfaces)
+        self._process_timer.timeout.connect(self._emit_processes)
         self._process_timer.start()
 
         self._partition_timer = QTimer(self)
@@ -59,28 +104,16 @@ class MetricsWorker(QObject):
         self._partition_timer.timeout.connect(self._emit_partitions)
         self._partition_timer.start()
 
-        # Emit one of each immediately so the UI isn't blank on launch.
-        self._emit_metrics()
-        self._emit_processes()
+        # Cheap emits first so those panels aren't blank during the slow scan.
         self._emit_interfaces()
         self._emit_partitions()
+        self._emit_processes()
 
     @Slot()
     def stop(self) -> None:
-        for timer in (self._metrics_timer, self._process_timer, self._partition_timer):
+        for timer in (self._process_timer, self._partition_timer):
             if timer is not None:
                 timer.stop()
-
-    def set_metrics_interval(self, interval_ms: int) -> None:
-        # No @Slot here: a queued signal delivers to a plain method by the
-        # receiver's thread affinity, and PySide6's Slot stub mistypes the
-        # single-int overload.
-        if self._metrics_timer is not None:
-            self._metrics_timer.setInterval(interval_ms)
-
-    @Slot()
-    def _emit_metrics(self) -> None:
-        self.sample_ready.emit(self._sampler.sample_metrics())
 
     @Slot()
     def _emit_processes(self) -> None:
@@ -96,34 +129,47 @@ class MetricsWorker(QObject):
 
 
 class MetricsService(QObject):
-    """Owns the QThread + worker lifecycle. Connect to ``worker`` signals."""
+    """Owns both threads + workers. Connect to ``metrics`` and ``processes``."""
 
     _interval_changed = Signal(int)
 
     def __init__(self, sampler: Sampler | None = None) -> None:
         super().__init__()
-        self._thread = QThread()
-        self._worker = MetricsWorker(sampler)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.start)
+        self._fast_thread = QThread()
+        self._slow_thread = QThread()
+        self._metrics = MetricsWorker(sampler)
+        self._processes = ProcessWorker()
+        self._metrics.moveToThread(self._fast_thread)
+        self._processes.moveToThread(self._slow_thread)
+        self._fast_thread.started.connect(self._metrics.start)
+        self._slow_thread.started.connect(self._processes.start)
         # Cross-thread, auto-queued: emitting on the UI thread delivers safely
-        # to the worker thread's event loop.
-        self._interval_changed.connect(self._worker.set_metrics_interval)
+        # to the fast worker thread's event loop.
+        self._interval_changed.connect(self._metrics.set_metrics_interval)
 
     @property
-    def worker(self) -> MetricsWorker:
-        return self._worker
+    def metrics(self) -> MetricsWorker:
+        return self._metrics
+
+    @property
+    def processes(self) -> ProcessWorker:
+        return self._processes
 
     def start(self) -> None:
-        self._thread.start()
+        self._fast_thread.start()
+        self._slow_thread.start()
 
     def set_metrics_interval(self, interval_ms: int) -> None:
         self._interval_changed.emit(interval_ms)
 
     def shutdown(self) -> None:
-        """Stop timers in the worker thread, then quit + wait — no crash on exit."""
-        if self._thread.isRunning():
-            # PySide6's stub types `member` as bytes, but str is correct at runtime.
-            QMetaObject.invokeMethod(self._worker, "stop", _BLOCKING)  # type: ignore[call-overload]
-            self._thread.quit()
-            self._thread.wait()
+        """Stop timers in each worker's thread, then quit + wait — no exit crash."""
+        for worker, thread in (
+            (self._metrics, self._fast_thread),
+            (self._processes, self._slow_thread),
+        ):
+            if thread.isRunning():
+                # PySide6's stub types `member` as bytes, but str is correct at runtime.
+                QMetaObject.invokeMethod(worker, "stop", _BLOCKING)  # type: ignore[call-overload]
+                thread.quit()
+                thread.wait()
