@@ -1,7 +1,7 @@
 -r requirements.txt
-pytest==8.3.4
+pytest==9.0.3
 pytest-cov==6.0.0
 pyright==1.1.391
 pyinstaller==6.11.1
 pip-audit==2.7.3
-pillow==11.0.0          # build-time only: tools/gen_icon.py asset generation
+pillow==12.3.0          # build-time only: tools/gen_icon.py asset generation
